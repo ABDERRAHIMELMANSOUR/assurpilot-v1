@@ -1,256 +1,379 @@
 "use client";
-import { useState, useEffect } from "react";
-import ResultModal   from "@/components/ui/ResultModal";
-import EditCallModal from "@/components/ui/EditCallModal";
+import { useState, useRef } from "react";
+import Link from "next/link";
 import { formatGlobalDate, formatDuration } from "@/lib/utils";
 
-type ResultOption = { value: string; label: string; color: string };
-
-type Call = {
-  id:             string;
-  callerNumber:   string;
-  isMissed:       boolean;
-  durationSeconds:number;
-  startedAt:      string;
-  statut:         string;
-  isManual?:      boolean;
-  assignedUserId?:string | null;
-  phoneLineId?:   string;
-  phoneLine:      { label: string };
-  assignedUser?:  { id?: string; nom: string; prenom: string } | null;
-  result?:        { resultat: string; notes?: string | null } | null;
+type PreviewRow = {
+  rowIndex:        number;
+  callerNumber:    string;
+  numeroAppele:    string;
+  startedAt:       string | null;
+  durationSeconds: number;
+  statut:          string;
+  conseiller:      string | null;
+  isDuplicate:     boolean;
+  error:           string;
 };
 
-const statutConfig: Record<string, { label: string; cls: string }> = {
-  REPONDU:  { label: "Répondu",  cls: "badge-green"  },
-  MANQUE:   { label: "Manqué",   cls: "badge-red"    },
-  EN_COURS: { label: "En cours", cls: "badge-yellow" },
+type PreviewResult = {
+  totalRows:     number;
+  validRows:     number;
+  invalidRows:   number;
+  duplicateRows: number;
+  preview:       PreviewRow[];
+  unmatchedNumbers: string[];
 };
 
-const COLOR_BADGE: Record<string, string> = {
-  green:  "badge-green",
-  blue:   "badge-blue",
-  red:    "badge-red",
-  yellow: "badge-yellow",
-  purple: "bg-purple-100 text-purple-800",
-  gray:   "badge-gray",
+type ImportResult = {
+  success:       boolean;
+  batchId:       string;
+  totalRows:     number;
+  importedRows:  number;
+  duplicateRows: number;
+  skippedRows:   number;
+  errors:        { row: number; numero: string; error: string }[];
 };
 
-interface Props {
-  calls:        Call[];
-  showAgent?:   boolean;
-  showNotes?:   boolean;
-  allowResult?: boolean;
-  isAdmin?:     boolean;   // enables edit/delete on manual calls
-  onRefresh?:   () => void;
-}
+export default function ImportAppelsPage() {
+  const fileRef                     = useRef<HTMLInputElement>(null);
+  const [file,        setFile]      = useState<File | null>(null);
+  const [dragging,    setDragging]  = useState(false);
+  const [previewing,  setPreviewing]= useState(false);
+  const [importing,   setImporting] = useState(false);
+  const [preview,     setPreview]   = useState<PreviewResult | null>(null);
+  const [result,      setResult]    = useState<ImportResult | null>(null);
+  const [error,       setError]     = useState("");
 
-export default function CallsTable({
-  calls,
-  showAgent    = false,
-  showNotes    = false,
-  allowResult  = false,
-  isAdmin      = false,
-  onRefresh,
-}: Props) {
-  const [resultModal, setResultModal]   = useState<Call | null>(null);
-  const [editModal,   setEditModal]     = useState<Call | null>(null);
-  const [resultOptions, setOptions]     = useState<ResultOption[]>([]);
-
-  useEffect(() => {
-    fetch("/api/call-result-options")
-      .then((r) => r.json())
-      .then((d) => setOptions(Array.isArray(d) ? d : []));
-  }, []);
-
-  function getResultBadge(value: string) {
-    const opt = resultOptions.find((o) => o.value === value);
-    if (!opt) return { label: value, cls: "badge-gray" };
-    return { label: opt.label, cls: COLOR_BADGE[opt.color] ?? "badge-gray" };
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault(); setDragging(false);
+    const f = e.dataTransfer.files[0];
+    if (f) { setFile(f); setPreview(null); setResult(null); setError(""); }
   }
 
-  // Determine which columns need an actions cell
-  const hasActions = allowResult || isAdmin;
-
-  if (calls.length === 0) {
-    return (
-      <div className="card p-12 text-center">
-        <svg className="w-10 h-10 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-        </svg>
-        <p className="text-gray-500 text-sm">Aucun appel pour cette période</p>
-      </div>
-    );
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (f) { setFile(f); setPreview(null); setResult(null); setError(""); }
   }
+
+  async function handlePreview() {
+    if (!file) return;
+    setPreviewing(true); setError(""); setPreview(null);
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("preview", "true");
+    try {
+      const res  = await fetch("/api/calls/import", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error ?? "Erreur lors de l'analyse."); return; }
+      setPreview(data);
+    } catch { setError("Erreur réseau."); }
+    finally { setPreviewing(false); }
+  }
+
+  async function handleImport() {
+    if (!file || !preview) return;
+    setImporting(true); setError("");
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("preview", "false");
+    try {
+      const res  = await fetch("/api/calls/import", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error ?? "Erreur lors de l'import."); return; }
+      setResult(data); setPreview(null);
+    } catch { setError("Erreur réseau."); }
+    finally { setImporting(false); }
+  }
+
+  function reset() {
+    setFile(null); setPreview(null); setResult(null); setError("");
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  const ext      = file?.name.split(".").pop()?.toLowerCase();
+  const validExt = ext === "xlsx" || ext === "csv" || ext === "xls";
 
   return (
-    <>
-      <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full" style={{ minWidth: hasActions ? "820px" : "620px" }}>
-            <thead className="bg-gray-50 border-b border-gray-100">
-              <tr>
-                <th className="table-th" style={{ minWidth: "140px" }}>Appelant</th>
-                {showAgent  && <th className="table-th" style={{ minWidth: "120px" }}>Conseiller</th>}
-                <th className="table-th" style={{ minWidth: "120px" }}>Ligne</th>
-                <th className="table-th" style={{ minWidth: "110px" }}>Date & Heure</th>
-                <th className="table-th" style={{ minWidth: "70px"  }}>Durée</th>
-                <th className="table-th" style={{ minWidth: "85px"  }}>Statut</th>
-                <th className="table-th" style={{ minWidth: "110px" }}>Résultat</th>
-                {showNotes && <th className="table-th" style={{ minWidth: "150px" }}>Notes</th>}
-                {hasActions && (
-                  <th
-                    className="table-th text-right bg-gray-50"
-                    style={{ minWidth: "140px", position: "sticky", right: 0, boxShadow: "-1px 0 0 #f3f4f6" }}
-                  >
-                    Actions
-                  </th>
-                )}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {calls.map((call) => {
-                const statut      = statutConfig[call.statut] ?? { label: call.statut, cls: "badge-gray" };
-                const resBadge    = call.result ? getResultBadge(call.result.resultat) : null;
-                const needsResult = !call.isMissed && !call.result && allowResult;
-                const canManage   = isAdmin && call.isManual;
-
-                return (
-                  <tr
-                    key={call.id}
-                    className={`hover:bg-gray-50 transition-colors ${needsResult ? "bg-amber-50/40" : ""}`}
-                  >
-                    {/* Appelant */}
-                    <td className="table-td">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-mono text-sm text-gray-800 whitespace-nowrap">
-                          {call.callerNumber || "—"}
-                        </span>
-                        {call.isManual && (
-                          <span className="badge badge-gray" style={{ fontSize: "10px", padding: "1px 5px" }}>
-                            Import
-                          </span>
-                        )}
-                      </div>
-                    </td>
-
-                    {/* Conseiller */}
-                    {showAgent && (
-                      <td className="table-td">
-                        {call.assignedUser
-                          ? <span className="text-sm whitespace-nowrap">{call.assignedUser.prenom} {call.assignedUser.nom}</span>
-                          : <span className="text-gray-400">—</span>}
-                      </td>
-                    )}
-
-                    {/* Ligne */}
-                    <td className="table-td">
-                      <span className="text-xs text-gray-500 whitespace-nowrap">{call.phoneLine.label}</span>
-                    </td>
-
-                    {/* Date */}
-                    <td className="table-td text-gray-500 text-xs whitespace-nowrap">
-                      {formatGlobalDate(call.startedAt)}
-                    </td>
-
-                    {/* Durée */}
-                    <td className="table-td font-mono text-sm whitespace-nowrap">
-                      {formatDuration(call.durationSeconds)}
-                    </td>
-
-                    {/* Statut */}
-                    <td className="table-td">
-                      <span className={`badge ${statut.cls}`}>{statut.label}</span>
-                    </td>
-
-                    {/* Résultat */}
-                    <td className="table-td">
-                      {resBadge ? (
-                        <span className={`badge ${resBadge.cls}`}>{resBadge.label}</span>
-                      ) : call.isMissed ? (
-                        <span className="text-gray-300 text-xs">—</span>
-                      ) : (
-                        <span className="text-amber-600 text-xs font-medium">À qualifier</span>
-                      )}
-                    </td>
-
-                    {/* Notes */}
-                    {showNotes && (
-                      <td className="table-td" style={{ maxWidth: "180px" }}>
-                        {call.result?.notes
-                          ? <span className="text-xs text-gray-600 line-clamp-2">{call.result.notes}</span>
-                          : <span className="text-gray-300 text-xs">—</span>}
-                      </td>
-                    )}
-
-                    {/* Actions — sticky */}
-                    {hasActions && (
-                      <td
-                        className="table-td bg-white"
-                        style={{ position: "sticky", right: 0, boxShadow: "-1px 0 0 #f3f4f6" }}
-                      >
-                        <div className="flex items-center justify-end gap-1.5">
-                          {/* Result button (conseillers / all roles on non-missed) */}
-                          {allowResult && !call.isMissed && !canManage && (
-                            <button
-                              onClick={() => setResultModal(call)}
-                              className={`btn text-xs py-1 px-2.5 whitespace-nowrap ${needsResult ? "btn-primary" : "btn-secondary"}`}
-                            >
-                              {call.result ? "Résultat" : "+ Résultat"}
-                            </button>
-                          )}
-
-                          {/* Admin edit/delete on manual calls */}
-                          {canManage && (
-                            <>
-                              <button
-                                onClick={() => setEditModal(call)}
-                                className="btn btn-secondary text-xs py-1 px-2.5 whitespace-nowrap"
-                              >
-                                Modifier
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+    <div className="p-6 max-w-5xl mx-auto">
+      {/* Header */}
+      <div className="mb-6 flex items-center gap-3">
+        <Link href="/admin/appels" className="btn btn-secondary text-xs py-1 px-2.5">← Retour</Link>
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900">Import d'appels</h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Importez un fichier Excel ou CSV exporté depuis Keyyo ou votre opérateur VoIP
+          </p>
         </div>
       </div>
 
-      {/* Result modal (for conseillers qualifying calls) */}
-      {resultModal && (
-        <ResultModal
-          callId={resultModal.id}
-          currentResult={resultModal.result}
-          onClose={() => setResultModal(null)}
-          onSaved={() => { setResultModal(null); onRefresh?.(); }}
-        />
+      {/* Success */}
+      {result && (
+        <div className="mb-6 card p-6">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+              <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <h2 className="text-base font-semibold text-gray-900 mb-3">Import terminé</h2>
+              <div className="grid grid-cols-4 gap-3 mb-4">
+                <div className="bg-gray-50 rounded-lg p-3 text-center">
+                  <p className="text-xl font-semibold text-gray-900">{result.totalRows}</p>
+                  <p className="text-xs text-gray-500">Lignes totales</p>
+                </div>
+                <div className="bg-green-50 rounded-lg p-3 text-center">
+                  <p className="text-xl font-semibold text-green-700">{result.importedRows}</p>
+                  <p className="text-xs text-green-600">Importées</p>
+                </div>
+                <div className="bg-amber-50 rounded-lg p-3 text-center">
+                  <p className="text-xl font-semibold text-amber-700">{result.duplicateRows}</p>
+                  <p className="text-xs text-amber-600">Doublons ignorés</p>
+                </div>
+                <div className="bg-red-50 rounded-lg p-3 text-center">
+                  <p className="text-xl font-semibold text-red-700">{result.skippedRows}</p>
+                  <p className="text-xs text-red-600">Invalides ignorées</p>
+                </div>
+              </div>
+              {result.errors.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                    Lignes invalides ({result.errors.length})
+                  </p>
+                  <div className="bg-red-50 rounded-lg p-3 space-y-1 max-h-40 overflow-y-auto">
+                    {result.errors.map((e, i) => (
+                      <p key={i} className="text-xs text-red-700">
+                        Ligne {e.row} · <span className="font-mono">{e.numero || "—"}</span> — {e.error}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="flex gap-2 mt-4">
+                <Link href="/admin/appels" className="btn btn-primary text-xs">Voir les appels importés</Link>
+                <button onClick={reset} className="btn btn-secondary text-xs">Nouvel import</button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* Edit modal (admin only, manual calls) */}
-      {editModal && (
-        <EditCallModal
-          call={{
-            id:             editModal.id,
-            callerNumber:   editModal.callerNumber,
-            assignedUserId: editModal.assignedUserId ?? null,
-            phoneLineId:    editModal.phoneLineId ?? "",
-            startedAt:      editModal.startedAt,
-            durationSeconds:editModal.durationSeconds,
-            statut:         editModal.statut,
-            isMissed:       editModal.isMissed,
-            result:         editModal.result,
-          }}
-          onClose={() => setEditModal(null)}
-          onSaved={() => { setEditModal(null); onRefresh?.(); }}
-          onDeleted={() => { setEditModal(null); onRefresh?.(); }}
-        />
+      {!result && (
+        <>
+          {/* Drop zone */}
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={handleDrop}
+            onClick={() => fileRef.current?.click()}
+            className={`card p-8 text-center cursor-pointer transition-all mb-5 ${
+              dragging         ? "border-blue-400 bg-blue-50 border-2" :
+              file && validExt ? "border-green-300 bg-green-50 border-2" :
+              "border-dashed border-gray-300 hover:border-blue-300 hover:bg-blue-50/30"
+            }`}
+          >
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileChange} />
+            {file ? (
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                  <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <p className="text-sm font-medium text-gray-900">{file.name}</p>
+                <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(1)} Ko · cliquez pour changer</p>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center">
+                  <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Glissez votre fichier ici</p>
+                  <p className="text-xs text-gray-400 mt-0.5">ou cliquez pour parcourir</p>
+                </div>
+                <div className="flex gap-2">
+                  {[".xlsx", ".xls", ".csv"].map((f) => (
+                    <span key={f} className="badge badge-gray">{f}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Column mapping reference */}
+          <div className="card p-4 mb-5">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+              Correspondance des colonnes
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { col: "Numéro présenté",    role: "Numéro du client",    highlight: true  },
+                { col: "Numéro appelé",      role: "Numéro du conseiller → identification", highlight: true },
+                { col: "Début d'appel",      role: "Date et heure de l'appel" },
+                { col: "Durée réelle (s)",   role: "Durée en secondes (0 = appel manqué)" },
+                { col: "Numéro appelant",    role: "Stocké en métadonnées uniquement" },
+                { col: "Destination / Site", role: "Stockés en métadonnées" },
+              ].map((r) => (
+                <div key={r.col} className="flex gap-2 text-xs items-start">
+                  <span className={`font-mono px-1.5 py-0.5 rounded flex-shrink-0 ${r.highlight ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-700"}`}>
+                    {r.col}
+                  </span>
+                  <span className="text-gray-500">{r.role}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {error && (
+            <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">{error}</div>
+          )}
+
+          {/* Analyse button */}
+          {!preview && (
+            <div className="flex gap-3">
+              <button onClick={handlePreview} disabled={!file || !validExt || previewing}
+                className="btn btn-primary disabled:opacity-50">
+                {previewing ? "Analyse en cours..." : "Analyser le fichier"}
+              </button>
+              {file && <button onClick={reset} className="btn btn-secondary">Annuler</button>}
+            </div>
+          )}
+
+          {/* Preview */}
+          {preview && (
+            <div className="space-y-4">
+              {/* Summary stats */}
+              <div className="grid grid-cols-4 gap-3">
+                <div className="stat-card text-center">
+                  <p className="text-2xl font-semibold text-gray-900">{preview.totalRows}</p>
+                  <p className="text-xs text-gray-500 mt-1">Lignes totales</p>
+                </div>
+                <div className="stat-card text-center">
+                  <p className="text-2xl font-semibold text-green-600">{preview.validRows}</p>
+                  <p className="text-xs text-green-600 mt-1">Lignes valides</p>
+                </div>
+                <div className="stat-card text-center">
+                  <p className="text-2xl font-semibold text-amber-600">{preview.duplicateRows}</p>
+                  <p className="text-xs text-amber-600 mt-1">Doublons</p>
+                </div>
+                <div className="stat-card text-center">
+                  <p className="text-2xl font-semibold text-red-500">{preview.invalidRows}</p>
+                  <p className="text-xs text-red-500 mt-1">Invalides</p>
+                </div>
+              </div>
+
+              {/* Unmatched numbers warning */}
+              {preview.unmatchedNumbers.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                  <p className="text-sm font-semibold text-amber-800 mb-1">
+                    ⚠ {preview.unmatchedNumbers.length} numéro{preview.unmatchedNumbers.length > 1 ? "s" : ""} appelé{preview.unmatchedNumbers.length > 1 ? "s" : ""} non reconnu{preview.unmatchedNumbers.length > 1 ? "s" : ""}
+                  </p>
+                  <p className="text-xs text-amber-700 mb-2">
+                    Ces numéros ne correspondent à aucun conseiller actif.
+                    Vérifiez que les conseillers ont leur numéro de téléphone configuré dans leur profil.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {preview.unmatchedNumbers.map((n) => (
+                      <span key={n} className="font-mono text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded">{n}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Preview table */}
+              <div className="card overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+                  <p className="text-sm font-semibold text-gray-700">
+                    Aperçu ({Math.min(preview.preview.length, 100)} lignes)
+                  </p>
+                  <div className="flex gap-3 text-xs text-gray-500">
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-400 inline-block" />Valide</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block" />Doublon</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400 inline-block" />Invalide</span>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b border-gray-100">
+                      <tr>
+                        <th className="table-th w-12">Ligne</th>
+                        <th className="table-th">N° client</th>
+                        <th className="table-th">N° conseiller</th>
+                        <th className="table-th">Conseiller</th>
+                        <th className="table-th">Date</th>
+                        <th className="table-th">Durée</th>
+                        <th className="table-th">Statut</th>
+                        <th className="table-th">État</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {preview.preview.map((row) => {
+                        const rowClass =
+                          row.isDuplicate ? "bg-amber-50/60" :
+                          row.error       ? "bg-red-50/50"   :
+                          "hover:bg-gray-50";
+                        return (
+                          <tr key={row.rowIndex} className={`transition-colors ${rowClass}`}>
+                            <td className="table-td text-xs text-gray-400">{row.rowIndex}</td>
+                            <td className="table-td font-mono text-sm text-gray-800">
+                              {row.callerNumber || "—"}
+                            </td>
+                            <td className="table-td font-mono text-xs text-gray-500">
+                              {row.numeroAppele || "—"}
+                            </td>
+                            <td className="table-td text-sm">
+                              {row.conseiller
+                                ? <span className="text-gray-900">{row.conseiller}</span>
+                                : <span className="text-red-500 text-xs font-medium">Non trouvé</span>}
+                            </td>
+                            <td className="table-td text-xs text-gray-500 whitespace-nowrap">
+                              {formatGlobalDate(row.startedAt)}
+                            </td>
+                            <td className="table-td font-mono text-sm">
+                              {formatDuration(row.durationSeconds)}
+                            </td>
+                            <td className="table-td">
+                              <span className={`badge ${row.statut === "REPONDU" ? "badge-green" : "badge-red"}`}>
+                                {row.statut === "REPONDU" ? "Répondu" : "Manqué"}
+                              </span>
+                            </td>
+                            <td className="table-td">
+                              {row.isDuplicate ? (
+                                <span className="badge badge-yellow">Doublon</span>
+                              ) : row.error ? (
+                                <span className="text-xs text-red-600">{row.error}</span>
+                              ) : (
+                                <span className="badge badge-green text-xs">OK</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Import actions */}
+              <div className="flex gap-3 pt-1">
+                <button onClick={handleImport} disabled={importing || preview.validRows === 0}
+                  className="btn btn-primary disabled:opacity-50">
+                  {importing
+                    ? "Import en cours..."
+                    : `Importer ${preview.validRows} appel${preview.validRows > 1 ? "s" : ""}`}
+                </button>
+                <button onClick={reset} className="btn btn-secondary">Annuler</button>
+              </div>
+              {preview.validRows === 0 && (
+                <p className="text-sm text-amber-600">Aucune ligne valide à importer dans ce fichier.</p>
+              )}
+            </div>
+          )}
+        </>
       )}
-    </>
+    </div>
   );
 }
