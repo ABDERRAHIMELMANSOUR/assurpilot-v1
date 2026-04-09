@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import ResultModal   from "./ResultModal";
 import EditCallModal from "./EditCallModal";
+import { formatGlobalDate, formatDuration } from "@/lib/utils";
 
 type ResultOption = { value: string; label: string; color: string };
 
@@ -34,26 +35,6 @@ const COLOR_BADGE: Record<string, string> = {
   purple: "bg-purple-100 text-purple-800",
   gray:   "badge-gray",
 };
-
-function formatDuration(s: number) {
-  if (!s) return "—";
-  return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
-}
-
-function formatDate(d: string) {
-  const date = new Date(d);
-  
-  // Had l-miza kat-férsi l-format "DD/MM/YYYY HH:mm:ss"
-  return new Intl.DateTimeFormat('fr-FR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  }).format(date).replace(',', ''); // replace bach n-heyydo l-fasilat (,) ila bano
-}
 
 interface Props {
   calls:        Call[];
@@ -169,7 +150,7 @@ export default function CallsTable({
 
                     {/* Date */}
                     <td className="table-td text-gray-500 text-xs whitespace-nowrap">
-                      {formatDate(call.startedAt)}
+                      {formatGlobalDate(call.startedAt)}
                     </td>
 
                     {/* Durée */}
