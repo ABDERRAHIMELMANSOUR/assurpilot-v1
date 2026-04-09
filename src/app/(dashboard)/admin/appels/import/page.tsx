@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
-import ResultModal   from "./ResultModal";
-import EditCallModal from "./EditCallModal";
+import ResultModal   from "@/components/ui/ResultModal";
+import EditCallModal from "@/components/ui/EditCallModal";
 import { formatGlobalDate, formatDuration } from "@/lib/utils";
 
 type ResultOption = { value: string; label: string; color: string };
