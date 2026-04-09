@@ -41,13 +41,18 @@ function formatDuration(s: number) {
 }
 
 function formatDate(d: string) {
-  const date  = new Date(d);
-  const today = new Date();
-  const yest  = new Date(today); yest.setDate(today.getDate() - 1);
-  const time  = date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-  if (date.toDateString() === today.toDateString()) return `Auj. ${time}`;
-  if (date.toDateString() === yest.toDateString())  return `Hier ${time}`;
-  return date.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" }) + ` ${time}`;
+  const date = new Date(d);
+  
+  // Had l-miza kat-férsi l-format "DD/MM/YYYY HH:mm:ss"
+  return new Intl.DateTimeFormat('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(date).replace(',', ''); // replace bach n-heyydo l-fasilat (,) ila bano
 }
 
 interface Props {
