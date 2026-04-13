@@ -1,12 +1,13 @@
 // prisma/schema.prisma — Prisma 7 for Railway (PostgreSQL)
 
 generator client {
-  provider = "prisma-client"
+  provider = "prisma-client-js"
   output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -15,8 +16,7 @@ model User {
   password      String
   nom           String
   prenom        String
-  name          String    @default("")
-  phoneNumber   String    @default("")
+  phone         String    @default("")
   role          String    @default("CONSEILLER")
   teamId        String?
   superviseurId String?
@@ -63,11 +63,11 @@ model Call {
   phoneLineId     String
   assignedUserId  String?
   callerNumber    String    @default("")
+  calledNumber    String    @default("") 
   isManual        Boolean   @default(false)
   isMissed        Boolean   @default(false)
   durationSeconds Int       @default(0)
-  startedAt       DateTime
-  dateTime        DateTime  @default(now())
+  startedAt       DateTime  @default(now()) 
   endedAt         DateTime?
   statut          String
   importBatchId   String?
@@ -107,13 +107,13 @@ model CallResultOption {
 }
 
 model ImportBatch {
-  id          String   @id @default(cuid())
-  fileName    String
-  totalRows   Int      @default(0)
-  importedRows Int     @default(0)
-  skippedRows Int      @default(0)
-  createdAt   DateTime @default(now())
-  createdBy   String   @default("")
+  id           String   @id @default(cuid())
+  fileName     String
+  totalRows    Int      @default(0)
+  importedRows Int      @default(0)
+  skippedRows  Int      @default(0)
+  createdAt    DateTime @default(now())
+  createdBy    String   @default("")
 
   calls Call[]
 
