@@ -20,6 +20,7 @@ export default defineConfig({
     seed: "tsx prisma/seed.ts",
   },
   datasource: {
-    url: process.env.DATABASE_URL ?? "",
+    // Beddel l-khat li l-te7t: 7iyed ?? ""
+    url: process.env.DATABASE_URL, 
   },
 });
