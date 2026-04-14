@@ -1,9 +1,8 @@
 // src/lib/constants.ts — Shared Prisma select objects
-// Moved here because Next.js App Router route files
-// must only export HTTP handlers (GET, POST, etc.)
+// Matches the clean V6 schema (nom/prenom/phoneNumber, no name field)
 
 export const USER_SELECT = {
-  id: true, nom: true, prenom: true, name: true, email: true, phoneNumber: true,
+  id: true, nom: true, prenom: true, email: true, phoneNumber: true,
   role: true, isActive: true, teamId: true,
   superviseurId: true, createdAt: true, lastLoginAt: true,
   team:        { select: { id: true, nom: true } },

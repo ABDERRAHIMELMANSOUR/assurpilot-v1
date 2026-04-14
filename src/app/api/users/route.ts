@@ -3,8 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { USER_SELECT } from "@/lib/constants";
 import bcrypt from "bcryptjs";
+
+import { USER_SELECT } from "@/lib/constants";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -59,7 +60,6 @@ export async function POST(req: NextRequest) {
     data: {
       email, password: await bcrypt.hash(password, 10),
       nom, prenom,
-      name: `${prenom} ${nom}`,
       phoneNumber: phoneNumber ?? "",
       role:         currentUser.role === "SUPERVISEUR" ? "CONSEILLER" : (role ?? "CONSEILLER"),
       teamId:       currentUser.role === "SUPERVISEUR" ? currentUser.teamId : (teamId ?? null),

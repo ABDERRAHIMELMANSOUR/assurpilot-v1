@@ -1,4 +1,6 @@
-// prisma/schema.prisma — Prisma 7 for Railway (PostgreSQL)
+// prisma/schema.prisma — Prisma 7, clean V6 models
+// NO alias fields (name, dateTime removed)
+// phoneNumber kept as-is (used in 15+ files)
 
 generator client {
   provider = "prisma-client-js"
@@ -7,7 +9,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  
 }
 
 model User {
@@ -16,7 +17,7 @@ model User {
   password      String
   nom           String
   prenom        String
-  phone         String    @default("")
+  phoneNumber   String    @default("")
   role          String    @default("CONSEILLER")
   teamId        String?
   superviseurId String?
@@ -63,11 +64,10 @@ model Call {
   phoneLineId     String
   assignedUserId  String?
   callerNumber    String    @default("")
-  calledNumber    String    @default("") 
   isManual        Boolean   @default(false)
   isMissed        Boolean   @default(false)
   durationSeconds Int       @default(0)
-  startedAt       DateTime  @default(now()) 
+  startedAt       DateTime
   endedAt         DateTime?
   statut          String
   importBatchId   String?

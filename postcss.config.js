@@ -1,3 +1,7 @@
-module.exports = {
-  plugins: { tailwindcss: {}, autoprefixer: {} },
-};
+import { defineConfig } from '@prisma/config';
+
+export default defineConfig({
+  datasource: {
+    url: process.env.DATABASE_URL,
+  },
+});

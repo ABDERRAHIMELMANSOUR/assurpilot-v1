@@ -37,11 +37,6 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   if (nom         !== undefined) data.nom         = nom;
   if (prenom      !== undefined) data.prenom      = prenom;
   if (phoneNumber !== undefined) data.phoneNumber = phoneNumber;
-  if (nom !== undefined || prenom !== undefined) {
-    const finalPrenom = prenom ?? target.prenom;
-    const finalNom = nom ?? target.nom;
-    data.name = `${finalPrenom} ${finalNom}`;
-  }
   if (isActive    !== undefined) data.isActive    = isActive;
   if (password)                  data.password    = await bcrypt.hash(password, 10);
   if (cu.role === "ADMINISTRATEUR") {
