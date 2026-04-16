@@ -1,5 +1,5 @@
 // prisma/seed.ts — Prisma 7, idempotent, Railway-safe
-// Fixed mapping: Pierre (Santé) & Marie (Auto)
+// Uses: nom, prenom, phoneNumber, startedAt (NO name, NO phone, NO dateTime)
 
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -94,14 +94,13 @@ async function main() {
       teamId: teamAuto.id,
     },
   });
-  // Assign coach as supervisor for Auto team
   await prisma.team.update({
     where: { id: teamAuto.id },
     data: { superviseurId: coach.id },
   }).catch(() => {});
   console.log("  ✓ Coach");
 
-  // ── Conseillers (CORRECTED MAPPING) ──
+  // ── Conseillers ──
   const agent1 = await prisma.user.upsert({
     where: { email: "marie.laurent@assurpilot.fr" },
     update: {},
@@ -110,7 +109,7 @@ async function main() {
       password: hash("agent123"),
       nom: "Laurent",
       prenom: "Marie",
-      phoneNumber: "0988288362", // Line Auto
+      phoneNumber: "0988288362",
       role: "CONSEILLER",
       teamId: teamAuto.id,
       superviseurId: coach.id,
@@ -124,7 +123,7 @@ async function main() {
       password: hash("agent123"),
       nom: "Durand",
       prenom: "Pierre",
-      phoneNumber: "0180873462", // Line Santé
+      phoneNumber: "0180873462",
       role: "CONSEILLER",
       teamId: teamSante.id,
       superviseurId: coach.id,
@@ -132,7 +131,7 @@ async function main() {
   });
   console.log("  ✓ Conseillers");
 
-  // ── Phone lines (CORRECTED MAPPING) ──
+  // ── Phone lines ──
   const lineAuto = await prisma.phoneLine.upsert({
     where: { id: "line-auto" },
     update: {},
@@ -159,14 +158,20 @@ async function main() {
   });
   console.log("  ✓ Keyyo config");
 
-  // ── Sample calls ──
+  // ── Sample calls (skip if data exists) ──
   const count = await prisma.call.count();
   if (count === 0) {
     const calls = [
       { line: lineAuto,  agent: agent1, caller: "+33 6 12 34 56 42", missed: false, dur: 374, at: daysAgo(0,14,23), res: "DEVIS_REALISE",  notes: "Assurance auto tout risque" },
       { line: lineAuto,  agent: agent1, caller: "+33 7 65 43 21 18", missed: false, dur: 125, at: daysAgo(0,13,47), res: "INFORMATION",    notes: "Questions sur garantie" },
-      { line: lineSante, agent: agent2, caller: "+33 6 10 20 30 12", missed: false, dur: 445, at: daysAgo(0,15,10), res: "DEVIS_REALISE",  notes: "Mutuelle santé senior" },
-      { line: lineSante, agent: agent2, caller: "+33 6 64 75 86 97", missed: false, dur: 603, at: daysAgo(1,11,50), res: "DEVIS_REALISE",  notes: "Famille 4 personnes" },
+      { line: lineAuto,  agent: agent1, caller: "+33 6 98 76 54 32", missed: true,  dur: 0,   at: daysAgo(0,12,10), res: null, notes: null },
+      { line: lineAuto,  agent: agent1, caller: "+33 6 11 22 33 91", missed: false, dur: 527, at: daysAgo(0,11,32), res: "DEVIS_REALISE",  notes: "Famille 2 voitures" },
+      { line: lineAuto,  agent: agent1, caller: "+33 9 44 55 66 07", missed: false, dur: 89,  at: daysAgo(1,16, 5), res: "NON_INTERESSE",  notes: "Déjà assuré" },
+      { line: lineAuto,  agent: agent1, caller: "+33 6 77 88 99 55", missed: false, dur: 412, at: daysAgo(1,10,30), res: "RAPPEL_PREVU",   notes: "Rappeler jeudi matin" },
+      { line: lineAuto,  agent: agent1, caller: "+33 7 12 98 76 54", missed: true,  dur: 0,   at: daysAgo(2, 9,15), res: null, notes: null },
+      { line: lineSante, agent: agent2, caller: "+33 6 10 20 30 12", missed: false, dur: 445, at: daysAgo(0,15,10), res: "DEVIS_REALISE",  notes: "Appartement Paris 75011" },
+      { line: lineSante, agent: agent2, caller: "+33 7 88 99 00 88", missed: false, dur: 210, at: daysAgo(0,14, 0), res: "INFORMATION",    notes: "Résiliation en cours" },
+      { line: lineSante, agent: agent2, caller: "+33 6 64 75 86 97", missed: false, dur: 603, at: daysAgo(1,11,50), res: "DEVIS_REALISE",  notes: "Mutuelle famille 4 personnes" },
     ];
 
     for (const c of calls) {
@@ -188,10 +193,16 @@ async function main() {
         });
       }
     }
-    console.log("  ✓ Sample calls (Corrected)");
+    console.log("  ✓ Sample calls (10)");
+  } else {
+    console.log(`  ⏭ Calls exist (${count}) — skipping`);
   }
 
   console.log("\n✅ Seed complete!");
+  console.log("  👑 admin@assurpilot.fr / admin123");
+  console.log("  🎯 coach@assurpilot.fr / coach123");
+  console.log("  👤 marie.laurent@assurpilot.fr / agent123");
+  console.log("  👤 pierre.durand@assurpilot.fr / agent123");
 }
 
 main()
