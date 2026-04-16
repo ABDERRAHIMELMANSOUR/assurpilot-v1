@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
   // Load conseillers keyed by normalized phone number
   const conseillers = await prisma.user.findMany({
     where: { role: "CONSEILLER", isActive: true },
-    select: { id: true, nom: true, prenom: true, phoneNumber: true },
+    select: { id: true, nom: true, prenom: true, phoneNumber: true, teamId: true },
   });
   const conseillerByPhone = new Map<string, typeof conseillers[0]>();
   for (const c of conseillers) {
@@ -106,6 +106,18 @@ export async function POST(req: NextRequest) {
   // Load phone lines — match by full number stored in numeroMasque
   const phoneLines = await prisma.phoneLine.findMany({ where: { isActive: true } });
   const defaultLine = phoneLines[0];
+
+  // Agent-Aware line mapping: team → phone line
+  // This ensures imports follow the organizational structure
+  // regardless of phone number variations in Excel files
+  const lineByPhone = new Map<string, typeof phoneLines[0]>();
+  for (const l of phoneLines) {
+    const norm = normalizePhone(l.numeroMasque);
+    if (norm) lineByPhone.set(norm, l);
+  }
+  const teamToLine = new Map<string, string>();
+  teamToLine.set("team-auto",  phoneLines.find(l => l.id === "line-auto")?.id  ?? defaultLine?.id ?? "");
+  teamToLine.set("team-sante", phoneLines.find(l => l.id === "line-sante")?.id ?? defaultLine?.id ?? "");
 
   type ParsedRow = {
     rowIndex:        number;
@@ -243,11 +255,17 @@ export async function POST(req: NextRequest) {
   for (const r of validRows) {
     if (!r.startedAt || !r.conseiller) continue;
 
-    // Find phone line: match by "Numéro appelé" (the conseiller's line) against phoneLines
-    let lineId = defaultLine?.id ?? "";
-    const normAppele = normalizePhone(r.numeroAppele);
-    for (const l of phoneLines) {
-      if (normalizePhone(l.numeroMasque) === normAppele) { lineId = l.id; break; }
+    // Agent-Aware line resolution:
+    // 1. Primary: use the conseiller's teamId → deterministic mapping
+    // 2. Fallback: match "Numéro appelé" against phoneLine.numeroMasque
+    // 3. Last resort: defaultLine (first active line)
+    let lineId = "";
+    if (r.conseiller.teamId && teamToLine.has(r.conseiller.teamId)) {
+      lineId = teamToLine.get(r.conseiller.teamId)!;
+    } else {
+      const normAppele = normalizePhone(r.numeroAppele);
+      const matchedLine = normAppele ? lineByPhone.get(normAppele) : null;
+      lineId = matchedLine?.id ?? defaultLine?.id ?? "";
     }
     if (!lineId) continue;
 
